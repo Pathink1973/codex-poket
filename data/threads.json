@@ -1,0 +1,24 @@
+[
+  {
+    "id": "47352320-723d-4090-bcc0-fd61d201d92b",
+    "title": "Responde apenas: interface operacional",
+    "prompt": "Responde apenas: interface operacional",
+    "status": "completed",
+    "output": "interface operacional",
+    "createdAt": "2026-07-20T18:56:06.684Z",
+    "effort": "medium",
+    "fileCount": 0,
+    "completedAt": "2026-07-20T18:56:07.772Z"
+  },
+  {
+    "id": "08eccd00-2f94-42f7-a9e8-39d60a072bd8",
+    "title": "Responde apenas: integração operacional",
+    "prompt": "Responde apenas: integração operacional",
+    "status": "completed",
+    "output": "integração operacional",
+    "createdAt": "2026-07-20T18:55:34.368Z",
+    "effort": "low",
+    "fileCount": 0,
+    "completedAt": "2026-07-20T18:55:36.582Z"
+  }
+]

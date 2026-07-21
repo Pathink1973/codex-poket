@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="pt">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#e9ff2f" />
+  <link rel="manifest" href="manifest.json" />
+  <title>Codex Pocket</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <section class="auth-screen" id="authScreen">
+    <div class="auth-card">
+      <div class="brand-mark" aria-hidden="true"><span></span><span></span><span></span><span></span></div>
+      <p class="eyebrow">CODEX POCKET</p>
+      <h1>O teu centro de<br><em>comando.</em></h1>
+      <p class="auth-intro">Entra para aceder aos teus agentes e threads.</p>
+      <form id="authForm">
+        <label>Email<input id="authEmail" type="email" autocomplete="email" required placeholder="nome@exemplo.com"></label>
+        <label>Password<input id="authPassword" type="password" autocomplete="current-password" minlength="8" required placeholder="Mínimo 8 caracteres"></label>
+        <p class="auth-message" id="authMessage" role="status"></p>
+        <button class="auth-primary" type="submit">Entrar <span>→</span></button>
+        <button class="auth-secondary" id="signUpButton" type="button">Criar conta por email</button>
+      </form>
+    </div>
+  </section>
+  <main class="app-shell">
+    <header class="topbar">
+      <div class="brand-mark" aria-label="Codex Pocket"><span></span><span></span><span></span><span></span></div>
+      <div class="connection"><i></i> CODEX ONLINE</div>
+      <button class="avatar" id="profileButton" aria-label="Terminar sessão">··</button>
+    </header>
+
+    <section class="hero">
+      <p class="eyebrow">CENTRO DE COMANDO</p>
+      <h1>Boa tarde,<br><em>Patrício.</em></h1>
+      <div class="pulse"><span></span> 3 agentes estão a trabalhar</div>
+    </section>
+
+    <section class="reasoning-card">
+      <div class="reasoning-copy">
+        <p>NÍVEL DE RACIOCÍNIO</p>
+        <h2 id="reasoningLabel">Equilibrado</h2>
+        <span id="reasoningHint">Rápido, mas pensa antes de agir.</span>
+      </div>
+      <div class="dial-wrap">
+        <div class="dial" id="dial" aria-hidden="true"><i></i></div>
+        <strong id="reasoningNumber">02</strong><small>/ 04</small>
+      </div>
+      <input id="reasoning" class="reasoning-range" type="range" min="1" max="4" value="2" aria-label="Nível de raciocínio" />
+      <div class="range-labels"><span>RÁPIDO</span><span>PROFUNDO</span></div>
+    </section>
+
+    <section class="section-head">
+      <div><p>AGENTES ATIVOS</p><h2>Threads</h2></div>
+      <button class="add-button" id="addThread" aria-label="Criar nova thread">+</button>
+    </section>
+
+    <section class="threads" id="threads"><p class="empty-threads">Ainda não existem threads.<br>Cria o primeiro comando no botão +</p></section>
+
+    <section class="quick-actions">
+      <button id="branchAction"><span>⑂</span><small>NOVA</small>Ramificação</button>
+      <button id="voiceAction"><span>◉</span><small>DITAR</small>Por voz</button>
+      <button id="stopAction"><span>×</span><small>PARAR</small>Todos</button>
+    </section>
+
+    <section class="secondary-view" id="secondaryView" hidden></section>
+
+    <button class="command-bar" id="commandBar">
+      <span class="command-icon">✦</span>
+      <span><small>DIZ AO CODEX O QUE FAZER</small><strong>Iniciar um comando…</strong></span>
+      <kbd>⌘ K</kbd>
+    </button>
+
+    <nav class="bottom-nav" aria-label="Navegação principal">
+      <button class="selected" id="navCommand" data-view="command"><span>⌁</span>Comando</button>
+      <button id="navActivity" data-view="activity"><span>▤</span>Atividade</button>
+      <button id="navSettings" data-view="settings"><span>⚙</span>Definições</button>
+    </nav>
+  </main>
+
+  <div class="sheet-backdrop" id="sheetBackdrop" hidden>
+    <section class="command-sheet" role="dialog" aria-modal="true" aria-labelledby="sheetTitle">
+      <div class="sheet-handle"></div>
+      <button class="sheet-close" id="sheetClose" aria-label="Fechar">×</button>
+      <p class="eyebrow">NOVO COMANDO</p>
+      <h2 id="sheetTitle">O que vamos construir?</h2>
+      <textarea id="commandInput" rows="4" placeholder="Descreve a tarefa para o Codex…"></textarea>
+      <div class="sheet-options">
+        <button type="button" id="attachButton">▣ <span>Anexar</span></button>
+        <button type="button" id="repositoryButton">⌁ <span>Repositório</span></button>
+      </div>
+      <input class="visually-hidden" id="filePicker" type="file" multiple />
+      <input class="visually-hidden" id="repositoryPicker" type="file" webkitdirectory directory multiple />
+      <div class="selection-list" id="selectionList" aria-live="polite"></div>
+      <section class="agent-response" id="agentResponse" hidden>
+        <div><span class="response-dot"></span><strong id="responseStatus">A iniciar agente…</strong></div>
+        <pre id="responseText"></pre>
+        <button type="button" id="cancelRun">Parar execução</button>
+      </section>
+      <button class="send-command" id="sendCommand">Enviar ao Codex <span>↑</span></button>
+    </section>
+  </div>
+
+  <div class="toast" id="toast" role="status"></div>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,9 @@
+{
+  "name": "Codex Pocket",
+  "short_name": "Pocket",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f4f5ef",
+  "theme_color": "#dfff33",
+  "description": "Centro de comando móvel para agentes de programação."
+}
