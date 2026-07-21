@@ -105,6 +105,17 @@
     </section>
   </div>
 
+  <div class="sheet-backdrop" id="branchBackdrop" hidden>
+    <section class="command-sheet branch-sheet" role="dialog" aria-modal="true" aria-labelledby="branchTitle">
+      <div class="sheet-handle"></div>
+      <button class="sheet-close" id="branchClose" aria-label="Fechar ramificação">×</button>
+      <p class="eyebrow">NOVA RAMIFICAÇÃO</p>
+      <h2 id="branchTitle">Partir de qual thread?</h2>
+      <p class="branch-help">A resposta anterior será usada como contexto para uma nova abordagem.</p>
+      <div class="branch-list" id="branchList"></div>
+    </section>
+  </div>
+
   <div class="toast" id="toast" role="status"></div>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="app.js"></script>

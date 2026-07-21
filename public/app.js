@@ -30,6 +30,11 @@ const authPassword = document.querySelector('#authPassword');
 const authMessage = document.querySelector('#authMessage');
 const signUpButton = document.querySelector('#signUpButton');
 const profileButton = document.querySelector('#profileButton');
+const branchBackdrop = document.querySelector('#branchBackdrop');
+const branchList = document.querySelector('#branchList');
+const voiceButton = document.querySelector('#voiceAction');
+const branchButton = document.querySelector('#branchAction');
+const stopButton = document.querySelector('#stopAction');
 const secondaryView = document.querySelector('#secondaryView');
 const navButtons = [...document.querySelectorAll('.bottom-nav button[data-view]')];
 const commandSections = ['.hero', '.reasoning-card', '.section-head', '#threads', '.quick-actions', '#commandBar'].map(selector => document.querySelector(selector));
@@ -39,6 +44,10 @@ let activeThreadId = null;
 let activeRequest = null;
 let supabaseClient = null;
 let currentSession = null;
+let branchContext = '';
+let speechRecognition = null;
+let mediaRecorder = null;
+let microphoneStream = null;
 
 async function deleteThread(thread) {
   if (!window.confirm(`Apagar o thread “${thread.title}”? Esta ação não pode ser anulada.`)) return false;
@@ -218,6 +227,132 @@ function openSheet() {
 
 function closeSheet() { backdrop.hidden = true; }
 
+async function openBranchPicker() {
+  branchBackdrop.hidden = false;
+  branchList.innerHTML = '<p class="empty-threads">A carregar threads…</p>';
+  try {
+    const threads = await getThreads();
+    const available = threads.filter(thread => thread.output).slice(0, 20);
+    branchList.replaceChildren();
+    if (!available.length) {
+      branchList.innerHTML = '<p class="empty-threads">Cria primeiro um thread concluído.</p>';
+      return;
+    }
+    available.forEach(thread => {
+      const option = document.createElement('button');
+      option.type = 'button';
+      option.className = 'branch-option';
+      option.innerHTML = '<strong></strong><small></small>';
+      option.querySelector('strong').textContent = thread.title;
+      option.querySelector('small').textContent = `${new Date(thread.createdAt).toLocaleDateString('pt-PT')} · ${thread.effort}`;
+      option.addEventListener('click', () => {
+        branchContext = `Thread original: ${thread.prompt}\n\nResposta anterior: ${thread.output}`;
+        branchBackdrop.hidden = true;
+        openSheet();
+        input.value = `Explora uma abordagem alternativa para: ${thread.prompt}`;
+        input.focus();
+        notify('Ramificação preparada — edita e envia o comando');
+      });
+      branchList.append(option);
+    });
+  } catch (error) { branchList.textContent = error.message; }
+}
+
+async function startRecordedDictation() {
+  if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) return notify('Gravação de voz não suportada neste browser');
+  try {
+    openSheet();
+    microphoneStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    const chunks = [];
+    mediaRecorder = new MediaRecorder(microphoneStream);
+    mediaRecorder.ondataavailable = event => { if (event.data.size) chunks.push(event.data); };
+    mediaRecorder.onstart = () => {
+      voiceButton.classList.add('listening');
+      voiceButton.querySelector('small').textContent = 'PARAR';
+      notify('A gravar — toca novamente para transcrever');
+    };
+    mediaRecorder.onstop = async () => {
+      voiceButton.classList.remove('listening');
+      voiceButton.querySelector('small').textContent = 'A PROCESSAR';
+      const blob = new Blob(chunks, { type: mediaRecorder.mimeType || 'audio/webm' });
+      microphoneStream?.getTracks().forEach(track => track.stop());
+      microphoneStream = null;
+      mediaRecorder = null;
+      try {
+        const form = new FormData();
+        form.append('audio', blob, 'dictation.webm');
+        const response = await apiFetch('/api/transcribe', { method: 'POST', body: form });
+        const body = await response.json();
+        if (!response.ok) throw new Error(body.error || 'Falha na transcrição');
+        input.value = `${input.value.trim()}${input.value.trim() && body.text ? ' ' : ''}${body.text || ''}`;
+        input.focus();
+        notify('Ditado transcrito');
+      } catch (error) { notify(error.message); }
+      finally { voiceButton.querySelector('small').textContent = 'DITAR'; }
+    };
+    mediaRecorder.start();
+  } catch (error) {
+    microphoneStream?.getTracks().forEach(track => track.stop());
+    microphoneStream = null;
+    mediaRecorder = null;
+    notify(error.name === 'NotAllowedError' ? 'Autoriza o acesso ao microfone' : 'Não foi possível iniciar o microfone');
+  }
+}
+
+function toggleVoiceDictation() {
+  if (mediaRecorder) {
+    mediaRecorder.stop();
+    return;
+  }
+  const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!Recognition) {
+    startRecordedDictation();
+    return;
+  }
+  if (speechRecognition) {
+    speechRecognition.stop();
+    return;
+  }
+  openSheet();
+  const recognition = new Recognition();
+  speechRecognition = recognition;
+  recognition.lang = 'pt-PT';
+  recognition.continuous = true;
+  recognition.interimResults = true;
+  const original = input.value.trim();
+  let dictatedText = '';
+  recognition.onstart = () => {
+    voiceButton.classList.add('listening');
+    voiceButton.querySelector('small').textContent = 'A OUVIR';
+    notify('A ouvir — toca novamente para terminar');
+  };
+  recognition.onresult = event => {
+    dictatedText = '';
+    for (let index = 0; index < event.results.length; index += 1) dictatedText += event.results[index][0].transcript;
+    input.value = `${original}${original && dictatedText ? ' ' : ''}${dictatedText}`.trim();
+  };
+  recognition.onerror = event => notify(event.error === 'not-allowed' ? 'Autoriza o acesso ao microfone' : `Erro no ditado: ${event.error}`);
+  recognition.onend = () => {
+    speechRecognition = null;
+    voiceButton.classList.remove('listening');
+    voiceButton.querySelector('small').textContent = 'DITAR';
+  };
+  recognition.start();
+}
+
+async function stopAllRuns() {
+  stopButton.disabled = true;
+  try {
+    const response = await apiFetch('/api/runs/cancel-all', { method: 'POST' });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(body.error || 'Não foi possível parar as execuções');
+    activeRequest?.abort();
+    notify(body.cancelled ? `${body.cancelled} execução${body.cancelled > 1 ? 'ões' : ''} cancelada${body.cancelled > 1 ? 's' : ''}` : 'Não existem execuções ativas');
+    await loadThreads();
+  } catch (error) { notify(error.message); }
+  finally { stopButton.disabled = false; }
+}
+
 function formatBytes(bytes) {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 ** 2) return `${Math.round(bytes / 1024)} KB`;
@@ -280,8 +415,8 @@ profileButton.addEventListener('click', async () => {
   await supabaseClient.auth.signOut();
   document.querySelector('#threads').innerHTML = '<p class="empty-threads">Inicia sessão para ver os teus threads.</p>';
 });
-document.querySelector('#commandBar').addEventListener('click', openSheet);
-document.querySelector('#addThread').addEventListener('click', openSheet);
+document.querySelector('#commandBar').addEventListener('click', () => { branchContext = ''; openSheet(); });
+document.querySelector('#addThread').addEventListener('click', () => { branchContext = ''; openSheet(); });
 document.querySelector('#sheetClose').addEventListener('click', closeSheet);
 backdrop.addEventListener('click', event => { if (event.target === backdrop) closeSheet(); });
 attachButton.addEventListener('click', () => filePicker.click());
@@ -304,6 +439,7 @@ sendButton.addEventListener('click', async () => {
   const form = new FormData();
   form.append('prompt', input.value.trim());
   form.append('reasoning', range.value);
+  if (branchContext) form.append('branchContext', branchContext);
   const files = [...attachments, ...(repository?.files || [])].slice(0, 40);
   files.forEach(file => form.append('files', file, file.webkitRelativePath || file.name));
 
@@ -355,6 +491,7 @@ sendButton.addEventListener('click', async () => {
     repository = null;
     filePicker.value = '';
     repositoryPicker.value = '';
+    branchContext = '';
     renderSelections();
   } catch (error) {
     responseStatus.textContent = 'ERRO';
@@ -370,9 +507,11 @@ cancelRun.addEventListener('click', async () => {
   responseStatus.textContent = 'CANCELADO';
   cancelRun.hidden = true;
 });
-document.querySelector('#voiceAction').addEventListener('click', () => notify('Ditado por voz ativado'));
-document.querySelector('#branchAction').addEventListener('click', () => notify('Nova ramificação criada'));
-document.querySelector('#stopAction').addEventListener('click', () => notify('Agentes pausados'));
+voiceButton.addEventListener('click', toggleVoiceDictation);
+branchButton.addEventListener('click', openBranchPicker);
+stopButton.addEventListener('click', stopAllRuns);
+document.querySelector('#branchClose').addEventListener('click', () => { branchBackdrop.hidden = true; });
+branchBackdrop.addEventListener('click', event => { if (event.target === branchBackdrop) branchBackdrop.hidden = true; });
 document.querySelectorAll('.pause').forEach(button => button.addEventListener('click', event => {
   event.stopPropagation();
   button.textContent = button.textContent === 'Ⅱ' ? '▶' : 'Ⅱ';
@@ -380,7 +519,7 @@ document.querySelectorAll('.pause').forEach(button => button.addEventListener('c
 }));
 document.addEventListener('keydown', event => {
   if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') { event.preventDefault(); openSheet(); }
-  if (event.key === 'Escape') closeSheet();
+  if (event.key === 'Escape') { closeSheet(); branchBackdrop.hidden = true; }
 });
 updateReasoning();
 initAuth();

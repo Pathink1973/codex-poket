@@ -1,7 +1,7 @@
 import 'dotenv/config';
 import express from 'express';
 import multer from 'multer';
-import OpenAI from 'openai';
+import OpenAI, { toFile } from 'openai';
 import { createClient } from '@supabase/supabase-js';
 import { dirname, extname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -19,6 +19,7 @@ const upload = multer({
   storage: multer.memoryStorage(),
   limits: { files: 40, fileSize: 512 * 1024, fieldSize: 2 * 1024 * 1024 }
 });
+const audioUpload = multer({ storage: multer.memoryStorage(), limits: { files: 1, fileSize: 10 * 1024 * 1024 } });
 const running = new Map();
 
 const allowedExtensions = new Set([
@@ -88,6 +89,23 @@ app.get('/api/health', (_req, res) => {
 
 app.get('/api/config', (_req, res) => res.json({ supabaseUrl, supabasePublishableKey: supabaseKey }));
 
+app.post('/api/transcribe', requireUser, audioUpload.single('audio'), async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'Gravação em falta.' });
+  const openai = getOpenAI();
+  if (!openai) return res.status(503).json({ error: 'OPENAI_API_KEY não configurada no servidor.' });
+  try {
+    const extension = req.file.mimetype.includes('mp4') ? 'm4a' : req.file.mimetype.includes('ogg') ? 'ogg' : 'webm';
+    const transcription = await openai.audio.transcriptions.create({
+      file: await toFile(req.file.buffer, `dictation.${extension}`, { type: req.file.mimetype }),
+      model: 'gpt-4o-mini-transcribe',
+      language: 'pt'
+    });
+    res.json({ text: transcription.text || '' });
+  } catch (error) {
+    res.status(502).json({ error: error?.message || 'Não foi possível transcrever o áudio.' });
+  }
+});
+
 app.get('/api/threads', requireUser, async (req, res) => {
   const { data, error } = await req.supabase.from('threads').select('*').order('created_at', { ascending: false }).limit(50);
   if (error) return res.status(500).json({ error: error.message });
@@ -98,13 +116,14 @@ app.delete('/api/threads/:id', requireUser, async (req, res) => {
   const { data, error } = await req.supabase.from('threads').delete().eq('id', req.params.id).select('id').maybeSingle();
   if (error) return res.status(500).json({ error: error.message });
   if (!data) return res.status(404).json({ error: 'Thread não encontrado.' });
-  const controller = running.get(req.params.id);
-  if (controller) controller.abort();
+  const run = running.get(req.params.id);
+  if (run) run.controller.abort();
   res.json({ ok: true, id: data.id });
 });
 
 app.post('/api/run', requireUser, upload.array('files', 40), async (req, res) => {
   const prompt = String(req.body.prompt || '').trim();
+  const branchContext = String(req.body.branchContext || '').slice(0, 20000);
   const effortMap = { '1': 'low', '2': 'medium', '3': 'high', '4': 'xhigh' };
   const effort = effortMap[String(req.body.reasoning)] || 'medium';
   if (!prompt) return res.status(400).json({ error: 'O comando é obrigatório.' });
@@ -129,14 +148,14 @@ app.post('/api/run', requireUser, upload.array('files', 40), async (req, res) =>
   sendEvent(res, 'thread', thread);
 
   const controller = new AbortController();
-  running.set(id, controller);
+  running.set(id, { controller, userId: req.user.id });
   let output = '';
   try {
     const stream = await openai.responses.create({
       model,
       reasoning: { effort },
       instructions: 'És um agente de programação cuidadoso. Responde em português europeu. Analisa apenas os ficheiros fornecidos. Não afirmes que alteraste ficheiros: propõe mudanças concretas e inclui código quando necessário.',
-      input: `${prompt}${context ? `\n\nCONTEXTO DO PROJETO:${context}` : ''}`,
+      input: `${prompt}${branchContext ? `\n\nCONTEXTO DA RAMIFICAÇÃO:\n${branchContext}` : ''}${context ? `\n\nCONTEXTO DO PROJETO:${context}` : ''}`,
       stream: true
     }, { signal: controller.signal });
 
@@ -168,10 +187,24 @@ app.post('/api/run', requireUser, upload.array('files', 40), async (req, res) =>
 app.post('/api/threads/:id/cancel', requireUser, async (req, res) => {
   const { data } = await req.supabase.from('threads').select('id').eq('id', req.params.id).maybeSingle();
   if (!data) return res.status(404).json({ error: 'Thread não encontrado.' });
-  const controller = running.get(req.params.id);
-  if (!controller) return res.status(404).json({ error: 'Execução ativa não encontrada.' });
-  controller.abort();
+  const run = running.get(req.params.id);
+  if (!run || run.userId !== req.user.id) return res.status(404).json({ error: 'Execução ativa não encontrada.' });
+  run.controller.abort();
   res.json({ ok: true });
+});
+
+app.post('/api/runs/cancel-all', requireUser, async (req, res) => {
+  let cancelled = 0;
+  for (const run of running.values()) {
+    if (run.userId === req.user.id) {
+      run.controller.abort();
+      cancelled += 1;
+    }
+  }
+  const { data, error } = await req.supabase.from('threads').update({ status: 'cancelled', completed_at: new Date().toISOString() }).eq('status', 'running').select('id');
+  if (error) return res.status(500).json({ error: error.message });
+  cancelled = Math.max(cancelled, data?.length || 0);
+  res.json({ ok: true, cancelled });
 });
 
 app.use((error, _req, res, _next) => {
