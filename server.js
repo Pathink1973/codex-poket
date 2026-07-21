@@ -8,10 +8,10 @@ import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
 
 const root = dirname(fileURLToPath(import.meta.url));
+const publicDir = join(root, 'public');
 const port = Number(process.env.PORT || 4173);
 const model = process.env.OPENAI_MODEL || 'gpt-5.6-terra';
 const app = express();
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseKey = process.env.SUPABASE_PUBLISHABLE_KEY;
 const authClient = supabaseUrl && supabaseKey ? createClient(supabaseUrl, supabaseKey, { auth: { persistSession: false, autoRefreshToken: false } }) : null;
@@ -60,6 +60,11 @@ function sendEvent(res, event, data) {
   res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
 }
 
+function getOpenAI() {
+  if (!process.env.OPENAI_API_KEY) return null;
+  return new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+}
+
 function safeFiles(files) {
   let total = 0;
   return files.filter(file => {
@@ -73,10 +78,12 @@ function safeFiles(files) {
 }
 
 app.use(express.json());
-app.use(express.static(root, { extensions: ['html'] }));
+app.use(express.static(publicDir, { extensions: ['html'] }));
 
 app.get('/api/health', (_req, res) => {
-  res.json({ ok: Boolean(process.env.OPENAI_API_KEY && authClient), model });
+  const checks = { openai: Boolean(process.env.OPENAI_API_KEY), supabaseUrl: Boolean(supabaseUrl), supabasePublishableKey: Boolean(supabaseKey) };
+  const ok = Object.values(checks).every(Boolean);
+  res.status(ok ? 200 : 503).json({ ok, model, checks });
 });
 
 app.get('/api/config', (_req, res) => res.json({ supabaseUrl, supabasePublishableKey: supabaseKey }));
@@ -101,7 +108,8 @@ app.post('/api/run', requireUser, upload.array('files', 40), async (req, res) =>
   const effortMap = { '1': 'low', '2': 'medium', '3': 'high', '4': 'xhigh' };
   const effort = effortMap[String(req.body.reasoning)] || 'medium';
   if (!prompt) return res.status(400).json({ error: 'O comando é obrigatório.' });
-  if (!process.env.OPENAI_API_KEY) return res.status(500).json({ error: 'OPENAI_API_KEY não configurada.' });
+  const openai = getOpenAI();
+  if (!openai) return res.status(503).json({ error: 'OPENAI_API_KEY não configurada no servidor.' });
 
   const files = safeFiles(req.files || []);
   const context = files.map(file => `\n--- FICHEIRO: ${file.originalname} ---\n${file.buffer.toString('utf8')}`).join('\n');
@@ -171,4 +179,8 @@ app.use((error, _req, res, _next) => {
   res.status(400).json({ error: message });
 });
 
-app.listen(port, () => console.log(`Codex Pocket em http://localhost:${port}`));
+export default app;
+
+if (!process.env.VERCEL) {
+  app.listen(port, () => console.log(`Codex Pocket em http://localhost:${port}`));
+}
